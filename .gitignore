@@ -1,0 +1,8 @@
+*.o
+*.a
+*.so
+swap_app
+revert_app
+main_static
+main_dynamic
+lab2/src/tests/tests
