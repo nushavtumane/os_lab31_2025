@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
   int pnum = -1;
   bool with_files = false;
 
+  // Парсинг аргументов командной строки
   while (true) {
     int current_optind = optind ? optind : 1;
 
@@ -40,34 +41,38 @@ int main(int argc, char **argv) {
         switch (option_index) {
           case 0:
             seed = atoi(optarg);
-            // your code here
-            // error handling
+            if (seed <= 0) {
+              printf("Seed must be a positive number\n");
+              return 1;
+            }
             break;
           case 1:
             array_size = atoi(optarg);
-            // your code here
-            // error handling
+            if (array_size <= 0) {
+              printf("Array size must be a positive number\n");
+              return 1;
+            }
             break;
           case 2:
             pnum = atoi(optarg);
-            // your code here
-            // error handling
+            if (pnum <= 0) {
+              printf("Pnum must be a positive number\n");
+              return 1;
+            }
             break;
           case 3:
             with_files = true;
             break;
-
-          defalut:
+          default:
             printf("Index %d is out of options\n", option_index);
+            return 1;
         }
         break;
       case 'f':
         with_files = true;
         break;
-
       case '?':
         break;
-
       default:
         printf("getopt returned character code 0%o?\n", c);
     }
@@ -84,29 +89,72 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // Выделение памяти и генерация массива
   int *array = malloc(sizeof(int) * array_size);
   GenerateArray(array, array_size, seed);
+
+  // Массив для дескрипторов pipe (только если не используем файлы)
+  int pipes[pnum][2];
+
   int active_child_processes = 0;
 
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
+  // Создание дочерних процессов
   for (int i = 0; i < pnum; i++) {
+    // Создаем pipe перед fork, если не используем файлы
+    if (!with_files) {
+      if (pipe(pipes[i]) == -1) {
+        perror("pipe failed");
+        return 1;
+      }
+    }
+
     pid_t child_pid = fork();
     if (child_pid >= 0) {
-      // successful fork
+      // Успешный fork
       active_child_processes += 1;
+      
       if (child_pid == 0) {
-        // child process
+        // ================= ДОЧЕРНИЙ ПРОЦЕСС =================
+        
+        // Вычисляем границы для текущего процесса
+        int chunk_size = array_size / pnum;
+        int remainder = array_size % pnum;
+        
+        // Распределяем остаток: первые remainder процессов получают на 1 элемент больше
+        int begin = i * chunk_size + (i < remainder ? i : remainder);
+        int end = begin + chunk_size + (i < remainder ? 1 : 0);
 
-        // parallel somehow
+        // Ищем min/max на своем участке
+        struct MinMax local_min_max = GetMinMax(array, begin, end);
 
         if (with_files) {
-          // use files here
+          // Синхронизация через файлы
+          char filename[30];
+          sprintf(filename, "temp_min_max_%d.txt", i);
+          FILE *f = fopen(filename, "w");
+          if (f) {
+            fprintf(f, "%d %d", local_min_max.min, local_min_max.max);
+            fclose(f);
+          } else {
+            perror("fopen failed");
+            exit(1);
+          }
         } else {
-          // use pipe here
+          // Синхронизация через pipe
+          close(pipes[i][0]); // Закрываем чтение в ребенке
+          write(pipes[i][1], &local_min_max, sizeof(struct MinMax));
+          close(pipes[i][1]); // Закрываем запись после отправки
         }
-        return 0;
+        
+        exit(0); // Важно завершить дочерний процесс
+      } else {
+        // ================= РОДИТЕЛЬСКИЙ ПРОЦЕСС =================
+        if (!with_files) {
+          close(pipes[i][1]); // Закрываем запись в родителе
+        }
       }
 
     } else {
@@ -115,12 +163,13 @@ int main(int argc, char **argv) {
     }
   }
 
+  // Ожидание завершения всех дочерних процессов
   while (active_child_processes > 0) {
-    // your code here
-
+    wait(NULL);
     active_child_processes -= 1;
   }
 
+  // Сбор и обработка результатов
   struct MinMax min_max;
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
@@ -130,11 +179,25 @@ int main(int argc, char **argv) {
     int max = INT_MIN;
 
     if (with_files) {
-      // read from files
+      // Чтение из файлов
+      char filename[30];
+      sprintf(filename, "temp_min_max_%d.txt", i);
+      FILE *f = fopen(filename, "r");
+      if (f) {
+        fscanf(f, "%d %d", &min, &max);
+        fclose(f);
+        remove(filename); // Удаляем временный файл
+      }
     } else {
-      // read from pipes
+      // Чтение из pipe
+      struct MinMax local;
+      read(pipes[i][0], &local, sizeof(struct MinMax));
+      close(pipes[i][0]); // Закрываем чтение
+      min = local.min;
+      max = local.max;
     }
 
+    // Обновляем глобальные значения
     if (min < min_max.min) min_max.min = min;
     if (max > min_max.max) min_max.max = max;
   }
