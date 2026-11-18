@@ -1,0 +1,15 @@
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -pthread
+
+all: psum
+
+# Сборка объектного файла библиотеки
+sum_lib.o: sum_lib.c sum_lib.h
+	$(CC) $(CFLAGS) -c sum_lib.c
+
+# Сборка основной программы с потоками
+psum: parallel_sum.c sum_lib.o sum_lib.h
+	$(CC) $(CFLAGS) -o psum parallel_sum.c sum_lib.o
+
+clean:
+	rm -f psum *.o

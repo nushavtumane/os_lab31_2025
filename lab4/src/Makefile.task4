@@ -1,0 +1,15 @@
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -I../../lab3/src
+
+all: parallel_min_max process_memory
+
+# Задание 1 (файлы берем из соседней папки lab3)
+parallel_min_max: ../../lab3/src/parallel_min_max.c ../../lab3/src/find_min_max.c ../../lab3/src/utils.c
+	$(CC) $(CFLAGS) -o parallel_min_max ../../lab3/src/parallel_min_max.c ../../lab3/src/find_min_max.c ../../lab3/src/utils.c
+
+# Задание 3 (файл лежит тут же, в lab4)
+process_memory: process_memory.c
+	$(CC) $(CFLAGS) -o process_memory process_memory.c
+
+clean:
+	rm -f parallel_min_max process_memory
